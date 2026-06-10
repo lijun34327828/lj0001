@@ -5,10 +5,7 @@ import router from '@/router'
 
 const service = axios.create({
   baseURL: '/api',
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  timeout: 30000
 })
 
 let isRefreshing = false
@@ -27,14 +24,24 @@ function processQueue(error, token = null) {
 
 service.interceptors.request.use(
   config => {
+    if (!config.headers) {
+      config.headers = {}
+    }
+    
     const userStore = useUserStore()
     if (userStore.token) {
       config.headers.Authorization = `Bearer ${userStore.token}`
     }
     
+    const isFormData = config.data instanceof FormData
+    
+    if (isFormData) {
+      delete config.headers['Content-Type']
+    }
+    
     if (config.method === 'post' 
         && !config.headers['X-Idempotency-Key']
-        && config.headers['Content-Type'] !== 'multipart/form-data'
+        && !isFormData
         && !config.skipIdempotency) {
       const idempotencyKey = generateIdempotencyKey()
       config.headers['X-Idempotency-Key'] = idempotencyKey
@@ -108,6 +115,7 @@ function generateIdempotencyKey() {
 }
 
 export default service
+export { service }
 
 export function request(config) {
   return service(config)
@@ -137,11 +145,9 @@ export function upload(url, file, onProgress) {
     url,
     method: 'post',
     data: formData,
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    },
+    skipIdempotency: true,
     onUploadProgress: progressEvent => {
-      if (onProgress) {
+      if (onProgress && progressEvent.total) {
         const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100)
         onProgress(percent)
       }

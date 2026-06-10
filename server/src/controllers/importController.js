@@ -22,11 +22,15 @@ function importBills(req, res) {
   const userId = req.user.id;
   const { account_id } = req.body;
 
+  logger.info(`收到CSV导入请求，userId=${userId}, account_id=${account_id}, file=${req.file ? req.file.originalname : 'none'}`);
+
   if (!req.file) {
+    logger.warn('导入请求没有文件');
     return res.json(error('请上传CSV文件'));
   }
 
   if (!account_id) {
+    fs.unlinkSync(req.file.path);
     return res.json(error('请选择导入账户'));
   }
 
@@ -42,7 +46,7 @@ function importBills(req, res) {
   const categoryMap = buildCategoryMap(userId);
   let rowNumber = 0;
 
-  fs.createReadStream(req.file.path)
+  fs.createReadStream(req.file.path, 'utf8')
     .pipe(csv())
     .on('data', (row) => {
       rowNumber++;
@@ -53,12 +57,20 @@ function importBills(req, res) {
         results.push({
           ...cleanRow,
           category_id: validation.categoryId,
+          billType: validation.billType,
+          amount: validation.amount,
+          date: validation.date,
+          description: validation.description,
           rowNumber
         });
       } else {
         errors.push({
           row: rowNumber,
-          ...cleanRow,
+          type: normalizeType(cleanRow.type || cleanRow['类型'] || cleanRow['收支类型'] || ''),
+          category: cleanRow.category || cleanRow['分类'] || cleanRow['类别'] || '',
+          amount: cleanRow.amount || cleanRow['金额'] || '',
+          date: cleanRow.date || cleanRow['日期'] || cleanRow['时间'] || '',
+          description: cleanRow.description || cleanRow['备注'] || cleanRow['描述'] || '',
           error: validation.error
         });
       }
@@ -74,7 +86,7 @@ function importBills(req, res) {
 
       const importResult = performImport(results, userId, account_id, errors);
 
-      logger.info(`账单导入: userId=${userId}, total=${rowNumber}, success=${importResult.success}, failed=${errors.length}`);
+      logger.info(`账单导入完成: userId=${userId}, total=${rowNumber}, success=${importResult.success}, failed=${errors.length}`);
 
       res.json(success({
         total: rowNumber,
@@ -87,7 +99,7 @@ function importBills(req, res) {
     .on('error', (err) => {
       logger.error('CSV解析错误:', err);
       try { fs.unlinkSync(req.file.path); } catch (e) {}
-      res.status(500).json(error('文件解析失败'));
+      res.status(500).json(error('文件解析失败: ' + err.message));
     });
 }
 
@@ -265,10 +277,21 @@ function exportTemplate(req, res) {
   res.end();
 }
 
+function normalizeType(type) {
+  if (!type) return '';
+  const t = String(type).toLowerCase();
+  if (t === 'income' || t === '收入') return 'income';
+  if (t === 'expense' || t === '支出') return 'expense';
+  return type;
+}
+
 function getImportPreview(req, res) {
   const userId = req.user.id;
 
+  logger.info(`收到CSV预览请求，userId=${userId}, file=${req.file ? req.file.originalname : 'none'}`);
+
   if (!req.file) {
+    logger.warn('预览请求没有文件');
     return res.json(error('请上传CSV文件'));
   }
 
@@ -277,7 +300,7 @@ function getImportPreview(req, res) {
   const categoryMap = buildCategoryMap(userId);
   let rowNumber = 0;
 
-  fs.createReadStream(req.file.path)
+  fs.createReadStream(req.file.path, 'utf8')
     .pipe(csv())
     .on('data', (row) => {
       rowNumber++;
@@ -286,13 +309,15 @@ function getImportPreview(req, res) {
       const cleanRow = cleanRowData(row);
       const validation = validateRow(cleanRow, categoryMap, rowNumber);
       
+      const rawType = cleanRow.type || cleanRow['类型'] || cleanRow['收支类型'] || '';
+      
       const rowData = {
         row: rowNumber,
-        type: validation.billType || (cleanRow.type || cleanRow['类型'] || ''),
-        category: cleanRow.category || cleanRow['分类'] || '',
+        type: validation.billType || normalizeType(rawType),
+        category: cleanRow.category || cleanRow['分类'] || cleanRow['类别'] || '',
         amount: cleanRow.amount || cleanRow['金额'] || '',
-        date: cleanRow.date || cleanRow['日期'] || '',
-        description: cleanRow.description || cleanRow['备注'] || ''
+        date: cleanRow.date || cleanRow['日期'] || cleanRow['时间'] || '',
+        description: cleanRow.description || cleanRow['备注'] || cleanRow['描述'] || ''
       };
 
       if (validation.valid) {
@@ -306,6 +331,8 @@ function getImportPreview(req, res) {
     })
     .on('end', () => {
       try { fs.unlinkSync(req.file.path); } catch (e) {}
+      
+      logger.info(`CSV预览完成，成功${results.length}条，失败${errors.length}条`);
 
       res.json(success({
         preview: results,
@@ -320,7 +347,7 @@ function getImportPreview(req, res) {
     .on('error', (err) => {
       logger.error('CSV预览解析错误:', err);
       try { fs.unlinkSync(req.file.path); } catch (e) {}
-      res.status(500).json(error('文件解析失败'));
+      res.status(500).json(error('文件解析失败: ' + err.message));
     });
 }
 

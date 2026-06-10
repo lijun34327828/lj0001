@@ -54,7 +54,11 @@
         </el-form-item>
       </el-form>
 
-      <div v-if="previewData.length > 0" class="preview-section">
+      <div v-if="previewLoading" class="preview-section">
+        <el-skeleton :rows="5" animated />
+      </div>
+
+      <div v-else-if="previewData.length > 0" class="preview-section">
         <div class="preview-header">
           <span class="preview-title">数据预览（前10条）</span>
           <span class="preview-stats">
@@ -120,6 +124,7 @@ const uploadRef = ref(null)
 const currentFile = ref(null)
 const accountId = ref(null)
 const importing = ref(false)
+const previewLoading = ref(false)
 const previewData = ref([])
 
 const validCount = computed(() => previewData.value.filter(item => !item.error).length)
@@ -135,15 +140,25 @@ function open() {
 }
 
 function handleFileChange(file) {
-  if (!file.raw) return
+  if (!file.raw) {
+    currentFile.value = null
+    previewData.value = []
+    return
+  }
   
   if (!file.name.endsWith('.csv')) {
     ElMessage.error('请上传CSV格式的文件')
+    fileList.value = []
+    currentFile.value = null
+    previewData.value = []
     return
   }
   
   if (file.size > 10 * 1024 * 1024) {
     ElMessage.error('文件大小不能超过10MB')
+    fileList.value = []
+    currentFile.value = null
+    previewData.value = []
     return
   }
 
@@ -157,21 +172,42 @@ function handleExceed() {
   ElMessage.warning('只能上传一个文件')
 }
 
+function normalizeType(type) {
+  if (!type) return ''
+  const t = String(type).toLowerCase()
+  if (t === 'income' || t === '收入') return 'income'
+  if (t === 'expense' || t === '支出') return 'expense'
+  return type
+}
+
 async function doPreview() {
   if (!currentFile.value) return
   
+  previewLoading.value = true
+  previewData.value = []
   try {
-    const formData = new FormData()
-    formData.append('file', currentFile.value)
-    
     const res = await previewImport(currentFile.value)
     if (res.code === 200) {
-      previewData.value = [
-        ...(res.data.preview || []).map(item => ({ ...item, error: null })),
-        ...(res.data.errors || [])
-      ].sort((a, b) => a.row - b.row)
+      const previewItems = (res.data.preview || []).map(item => ({
+        ...item,
+        type: normalizeType(item.type),
+        error: null
+      }))
+      const errorItems = (res.data.errors || []).map(item => ({
+        ...item,
+        type: normalizeType(item.type)
+      }))
+      previewData.value = [...previewItems, ...errorItems].sort((a, b) => a.row - b.row)
+    } else {
+      ElMessage.error(res.message || '预览失败')
+      previewData.value = []
     }
-  } catch (e) {}
+  } catch (e) {
+    ElMessage.error(e.message || '预览失败，请检查文件格式')
+    previewData.value = []
+  } finally {
+    previewLoading.value = false
+  }
 }
 
 async function handleImport() {
@@ -184,7 +220,11 @@ async function handleImport() {
       ElMessage.success(`导入完成，成功${res.data.success}条，失败${res.data.failed}条`)
       emit('success')
       visible.value = false
+    } else {
+      ElMessage.error(res.message || '导入失败')
     }
+  } catch (e) {
+    ElMessage.error(e.message || '导入失败，请重试')
   } finally {
     importing.value = false
   }

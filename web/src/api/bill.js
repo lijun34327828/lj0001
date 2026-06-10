@@ -1,4 +1,4 @@
-import { get, post, put, del, upload } from '@/utils/request'
+import { get, post, put, del, upload, service } from '@/utils/request'
 
 export function getBills(params) {
   return get('/bills', params)
@@ -32,7 +32,10 @@ export function importBills(file, accountId, onProgress) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('account_id', accountId)
-  return post('/bills/import', formData, {
+  return service({
+    url: '/bills/import',
+    method: 'post',
+    data: formData,
     skipIdempotency: true,
     onUploadProgress: progressEvent => {
       if (onProgress && progressEvent.total) {
@@ -45,7 +48,10 @@ export function importBills(file, accountId, onProgress) {
 export function previewImport(file, onProgress) {
   const formData = new FormData()
   formData.append('file', file)
-  return post('/bills/import/preview', formData, {
+  return service({
+    url: '/bills/import/preview',
+    method: 'post',
+    data: formData,
     skipIdempotency: true,
     onUploadProgress: progressEvent => {
       if (onProgress && progressEvent.total) {
