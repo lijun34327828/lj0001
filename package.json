@@ -1,0 +1,13 @@
+{
+  "name": "asset-budget-system",
+  "version": "1.0.0",
+  "description": "前后端分离版资产与预算管理系统",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:web": "cd web && npm run dev",
+    "install:all": "cd server && npm install && cd ../web && npm install",
+    "build:web": "cd web && npm run build"
+  },
+  "author": "",
+  "license": "ISC"
+}
